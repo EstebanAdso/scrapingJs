@@ -48,7 +48,7 @@ async function getDataFromWebPage() {
                         if ((index === 1 && build === '16.0.100.4') ||
                             (index === 2 && build === '15.0.1000.34') ||
                             (index === 3 && build === '14.0.1.246') ||
-                            (index === 3 && build === '13.0.200.172') ||
+                            (index === 4 && build === '13.0.200.172') ||
                             (index === 5 && build === '11.0.9120.0')) {
                             stopConditionMet = true;
                             return;
@@ -65,42 +65,41 @@ async function getDataFromWebPage() {
 
     await browser.close();
 
-    for (const [versionYear, results] of Object.entries(data)) {
-        let tableName = `version${versionYear}`;
+let fullSqlScript = "USE VersionSql;\n\n";
 
-        // Generar el script SQL
-        let sqlScript = "USE VersionSql;\n\n";
+fullSqlScript += `IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='versionesSql' AND xtype='U')
+        BEGIN
+        CREATE TABLE versionesSql (
+            anio VARCHAR(4),
+            build VARCHAR(255),
+            file_version VARCHAR(255),
+            description VARCHAR(MAX),
+            release_date DATE
+        );
+        END;\n\n`;
 
-        sqlScript += `IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='${tableName}' AND xtype='U')
-BEGIN
-CREATE TABLE ${tableName} (
-    build VARCHAR(255),
-    file_version VARCHAR(255),
-    description VARCHAR(MAX),
-    release_date DATE
-);
-END;\n\n`;
+            for (const [versionYear, results] of Object.entries(data)) {
+                results.forEach(row => {
+                    fullSqlScript += `IF NOT EXISTS (SELECT * FROM versionesSql WHERE build = '${row.build}')
+        BEGIN
+            INSERT INTO versionesSql (anio, build, file_version, description, release_date)
+            VALUES ('${versionYear}', '${row.build}', '${row.fileVersion}', '${row.kbDescription}', '${row.releaseDate}');
+        END
+        ELSE
+        BEGIN
+            UPDATE versionesSql
+            SET anio = '${versionYear}',
+                file_version = '${row.fileVersion}',
+                description = '${row.kbDescription}',
+                release_date = '${row.releaseDate}'
+            WHERE build = '${row.build}';
+        END;\n\n`;
+                });
+            }
 
-        results.forEach(row => {
-            sqlScript += `IF NOT EXISTS (SELECT * FROM ${tableName} WHERE build = '${row.build}')
-BEGIN
-    INSERT INTO ${tableName} (build, file_version, description, release_date)
-    VALUES ('${row.build}', '${row.fileVersion}', '${row.kbDescription}', '${row.releaseDate}');
-END
-ELSE
-BEGIN
-    UPDATE ${tableName}
-    SET file_version = '${row.fileVersion}',
-        description = '${row.kbDescription}',
-        release_date = '${row.releaseDate}'
-    WHERE build = '${row.build}';
-END;\n\n`;
-        });
-
-        // Guardar el script SQL en un archivo
-        fs.writeFileSync(`${tableName}.sql`, sqlScript);
-        console.log(`SQL script for ${versionYear} generated successfully.`);
-    }
+    // Guardar el script SQL completo en un archivo
+    fs.writeFileSync('versionesSql.sql', fullSqlScript);
+    console.log('Full SQL script generated successfully.');
 }
 
 getDataFromWebPage();
